@@ -97,6 +97,13 @@ export default function App() {
   const [generalPaymentMethod, setGeneralPaymentMethod] = useState('Cash');
   const [generalPaymentNote, setGeneralPaymentNote] = useState('');
 
+  // Loading states for API requests
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isSavingSale, setIsSavingSale] = useState(false);
+  const [isSavingVeg, setIsSavingVeg] = useState(false);
+  const [isSavingBroker, setIsSavingBroker] = useState(false);
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
+
   // Sync data on load
   useEffect(() => {
     if (token) {
@@ -165,13 +172,20 @@ export default function App() {
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
+    setIsAuthSubmitting(true);
 
-    if (isRegisterMode) {
-      const res = await register(username, password, farmerName, villageName, phone);
-      if (!res.success) setAuthError(res.message);
-    } else {
-      const res = await login(username, password);
-      if (!res.success) setAuthError(res.message);
+    try {
+      if (isRegisterMode) {
+        const res = await register(username, password, farmerName, villageName, phone);
+        if (!res.success) setAuthError(res.message);
+      } else {
+        const res = await login(username, password);
+        if (!res.success) setAuthError(res.message);
+      }
+    } catch (err) {
+      setAuthError(err.message || 'Authentication failed');
+    } finally {
+      setIsAuthSubmitting(false);
     }
   };
 
@@ -257,8 +271,8 @@ export default function App() {
                 />
               </div>
 
-              <button type="submit" className="btn btn-primary">
-                {isRegisterMode ? 'Register (खाता बनाएं)' : 'Login (लॉगिन करें)'}
+              <button type="submit" className="btn btn-primary" disabled={isAuthSubmitting}>
+                {isAuthSubmitting ? 'Processing...' : (isRegisterMode ? 'Register (खाता बनाएं)' : 'Login (लॉगिन करें)')}
               </button>
             </form>
 
@@ -351,6 +365,7 @@ export default function App() {
   const handleAddInlineVeg = async (e) => {
     e.preventDefault();
     if (!inlineVegName.trim()) return;
+    setIsSavingVeg(true);
     try {
       const added = await addVegetable(inlineVegName.trim());
       setSelectedVeg(added.name);
@@ -358,6 +373,8 @@ export default function App() {
       setShowInlineVegInput(false);
     } catch (err) {
       alert(err.message);
+    } finally {
+      setIsSavingVeg(false);
     }
   };
 
@@ -368,6 +385,7 @@ export default function App() {
       alert("Broker name and Mandi name are required!");
       return;
     }
+    setIsSavingBroker(true);
     try {
       const added = await addBroker(
         inlineBrokerName.trim(),
@@ -384,6 +402,8 @@ export default function App() {
       setShowInlineBrokerInput(false);
     } catch (err) {
       alert(err.message);
+    } finally {
+      setIsSavingBroker(false);
     }
   };
 
@@ -773,18 +793,23 @@ export default function App() {
             <form onSubmit={async (e) => {
               e.preventDefault();
               const vName = e.target.vegNameName.value;
+              setIsSavingVeg(true);
               try {
                 await addVegetable(vName);
                 setShowAddVegModal(false);
               } catch (err) {
                 alert(err.message);
+              } finally {
+                setIsSavingVeg(false);
               }
             }}>
               <div className="form-group">
                 <label>Vegetable Name (सब्जी का नाम)*</label>
                 <input type="text" name="vegNameName" className="input-field" placeholder="e.g. Baingan, Aloo, Tomato, Gobhi" required />
               </div>
-              <button type="submit" className="btn btn-primary">Save Vegetable</button>
+              <button type="submit" className="btn btn-primary" disabled={isSavingVeg}>
+                {isSavingVeg ? 'Saving...' : 'Save Vegetable'}
+              </button>
             </form>
           </div>
         </div>
@@ -804,11 +829,14 @@ export default function App() {
               const bMandi = e.target.mandiName.value;
               const bPhone = e.target.brokerPhone.value;
               const bComm = e.target.brokerComm.value;
+              setIsSavingBroker(true);
               try {
                 await addBroker(bName, bMandi, bPhone, bComm ? Number(bComm) : 6);
                 setShowAddBroker(false);
               } catch (err) {
                 alert(err.message);
+              } finally {
+                setIsSavingBroker(false);
               }
             }}>
               <div className="form-group">
@@ -844,7 +872,9 @@ export default function App() {
                   onFocus={e => { if (e.target.value === '0') e.target.value = ''; }}
                 />
               </div>
-              <button type="submit" className="btn btn-primary">Save Broker</button>
+              <button type="submit" className="btn btn-primary" disabled={isSavingBroker}>
+                {isSavingBroker ? 'Saving...' : 'Save Broker'}
+              </button>
             </form>
           </div>
         </div>
@@ -888,11 +918,14 @@ export default function App() {
                 otherDeductions: Number(saleOther)
               };
 
+              setIsSavingSale(true);
               try {
                 await addSale(bId, veg, qty, unit, price, deductions, dateVal);
                 setShowAddSale(false);
               } catch (err) {
                 alert(err.message);
+              } finally {
+                setIsSavingSale(false);
               }
             }}>
               {/* BROKER SELECT WITH INLINE CREATOR */}
@@ -943,8 +976,8 @@ export default function App() {
                         }
                       }}
                     />
-                    <button type="button" className="btn btn-primary" onClick={handleAddInlineBroker} style={{ padding: '8px' }}>
-                      Save Broker
+                    <button type="button" className="btn btn-primary" onClick={handleAddInlineBroker} style={{ padding: '8px' }} disabled={isSavingBroker}>
+                      {isSavingBroker ? 'Saving...' : 'Save Broker'}
                     </button>
                   </div>
                 ) : (
@@ -988,8 +1021,8 @@ export default function App() {
                         value={inlineVegName}
                         onChange={e => setInlineVegName(e.target.value)}
                       />
-                      <button type="button" className="btn btn-primary" onClick={handleAddInlineVeg} style={{ width: 'auto', padding: '10px 16px' }}>
-                        Save
+                      <button type="button" className="btn btn-primary" onClick={handleAddInlineVeg} style={{ width: 'auto', padding: '10px 16px' }} disabled={isSavingVeg}>
+                        {isSavingVeg ? 'Saving...' : 'Save'}
                       </button>
                     </div>
                   ) : (
@@ -1064,7 +1097,9 @@ export default function App() {
                   <input type="date" name="date" className="input-field" defaultValue={new Date().toISOString().substring(0,10)} />
                 </div>
 
-                <button type="submit" className="btn btn-primary" disabled={vegetables.length === 0}>Save Sale</button>
+                <button type="submit" className="btn btn-primary" disabled={vegetables.length === 0 || isSavingSale}>
+                  {isSavingSale ? 'Saving...' : 'Save Sale'}
+                </button>
               </form>
           </div>
         </div>
@@ -1107,12 +1142,15 @@ export default function App() {
                 otherDeductions: Number(collectOther) || 0
               };
 
+              setIsSavingPayment(true);
               try {
                 // Pass billDate parameter, triggers backend distribution algorithm across portion sales
                 await addPayment(brokerIdVal, null, showCollectBillCash.dateString, amt, deductions, collectMethod, e.target.date.value, collectNote);
                 setShowCollectBillCash(null);
               } catch (err) {
                 alert(err.message);
+              } finally {
+                setIsSavingPayment(false);
               }
             }}>
               {/* DEDUCTIONS AND EXPENSES GRID IN PAYMENT COLLECT MODAL */}
@@ -1243,7 +1281,9 @@ export default function App() {
                 />
               </div>
 
-              <button type="submit" className="btn btn-primary">Record Cash Receipt</button>
+              <button type="submit" className="btn btn-primary" disabled={isSavingPayment}>
+                {isSavingPayment ? 'Recording...' : 'Record Cash Receipt'}
+              </button>
             </form>
           </div>
         </div>
@@ -1324,7 +1364,9 @@ export default function App() {
                   />
                 </div>
 
-                <button type="submit" className="btn btn-primary">Record Cash Receipt</button>
+                <button type="submit" className="btn btn-primary" disabled={isSavingPayment}>
+                {isSavingPayment ? 'Recording...' : 'Record Cash Receipt'}
+              </button>
               </form>
             )}
           </div>
