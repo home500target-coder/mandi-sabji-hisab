@@ -858,6 +858,7 @@ export default function App() {
                   name="brokerComm" 
                   className="input-field" 
                   placeholder="6" 
+                  inputMode="decimal"
                   onChange={e => {
                     let val = e.target.value;
                     let cleaned = val.replace(/[^0-9.]/g, '');
@@ -969,6 +970,7 @@ export default function App() {
                       className="input-field" 
                       placeholder="Commission Rate (कमीशन %)" 
                       value={inlineBrokerComm}
+                      inputMode="decimal"
                       onChange={handleNumericChange(setInlineBrokerComm)}
                       onFocus={e => {
                         if (inlineBrokerComm === '0') {
@@ -1048,6 +1050,7 @@ export default function App() {
                     className="input-field" 
                     placeholder="e.g. 12"
                     value={saleQty} 
+                    inputMode="decimal"
                     onChange={handleNumericChange(setSaleQty)} 
                     required 
                   />
@@ -1070,6 +1073,7 @@ export default function App() {
                     className="input-field" 
                     placeholder="e.g. 20"
                     value={salePrice} 
+                    inputMode="decimal"
                     onChange={handleNumericChange(setSalePrice)} 
                     required 
                   />
@@ -1164,6 +1168,7 @@ export default function App() {
                     className="input-field" 
                     placeholder="0"
                     value={collectCommRate}
+                    inputMode="decimal"
                     onChange={handleNumericChange(setCollectCommRate)}
                     onFocus={e => {
                       if (collectCommRate === '0') {
@@ -1180,6 +1185,7 @@ export default function App() {
                     className="input-field" 
                     placeholder="0"
                     value={collectLabor}
+                    inputMode="decimal"
                     onChange={handleNumericChange(setCollectLabor)}
                   />
                 </div>
@@ -1191,6 +1197,7 @@ export default function App() {
                     className="input-field" 
                     placeholder="0"
                     value={collectTax}
+                    inputMode="decimal"
                     onChange={handleNumericChange(setCollectTax)}
                   />
                 </div>
@@ -1202,6 +1209,7 @@ export default function App() {
                     className="input-field" 
                     placeholder="0"
                     value={collectOther}
+                    inputMode="decimal"
                     onChange={handleNumericChange(setCollectOther)}
                   />
                 </div>
@@ -1241,6 +1249,7 @@ export default function App() {
                   type="text" 
                   className="input-field" 
                   value={collectAmount} 
+                  inputMode="decimal"
                   onChange={handleNumericChange(setCollectAmount)} 
                   required 
                 />
@@ -1333,6 +1342,7 @@ export default function App() {
                     type="text" 
                     className="input-field" 
                     value={generalPaymentAmount}
+                    inputMode="decimal"
                     onChange={handleNumericChange(setGeneralPaymentAmount)}
                     placeholder="e.g. 5000"
                     required 
