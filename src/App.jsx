@@ -1348,12 +1348,15 @@ export default function App() {
                   alert("Please enter a valid amount");
                   return;
                 }
+                setIsSavingPayment(true);
                 try {
                   const paymentDateISO = e.target.date.value ? new Date(e.target.date.value).toISOString() : new Date().toISOString();
                   await addPayment(generalPaymentBroker, null, null, amt, null, generalPaymentMethod, paymentDateISO, generalPaymentNote);
                   setShowAddGeneralPayment(false);
                 } catch (err) {
                   alert(err.message);
+                } finally {
+                  setIsSavingPayment(false);
                 }
               }}>
                 <div className="form-group">
