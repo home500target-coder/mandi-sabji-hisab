@@ -2,6 +2,14 @@ import { useState, useCallback } from 'react';
 import { db } from '../db/localDb';
 import { useAuth, API_URL } from '../context/AuthContext';
 
+// Helper to format date to local YYYY-MM-DD
+const getLocalDateString = (d) => {
+  const dateObj = typeof d === 'string' || typeof d === 'number' ? new Date(d) : d;
+  if (!dateObj || isNaN(dateObj.getTime())) return '';
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())}`;
+};
+
 export const useOfflineCache = () => {
   const { token, isOnline, setIsOfflineView } = useAuth();
   const [brokers, setBrokers] = useState([]);
@@ -181,7 +189,7 @@ export const useOfflineCache = () => {
     const res = await fetch(`${API_URL}/payments`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ brokerId, saleId, billDate, amountReceived, deductions, paymentMethod, date, note })
+      body: JSON.stringify({ brokerId, saleId, billDate, amountReceived, deductions, paymentMethod, date, note, timezoneOffset: new Date().getTimezoneOffset() })
     });
 
     if (res.ok) {
@@ -205,7 +213,7 @@ export const useOfflineCache = () => {
         // Filter sales for this broker and date
         const targetSales = localSales.filter(s => {
           const sBrokerId = s.brokerId._id || s.brokerId;
-          const sDateString = new Date(s.date).toISOString().substring(0, 10);
+          const sDateString = getLocalDateString(s.date);
           return sBrokerId === brokerIdVal && sDateString === billDate;
         }).sort((a, b) => new Date(a.date) - new Date(b.date));
 
