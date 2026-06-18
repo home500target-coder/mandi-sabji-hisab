@@ -21,6 +21,35 @@ import {
   WifiOff
 } from 'lucide-react';
 
+// Helper to format date to local YYYY-MM-DD
+const getLocalDateString = (d = new Date()) => {
+  const dateObj = typeof d === 'string' || typeof d === 'number' ? new Date(d) : d;
+  if (!dateObj || isNaN(dateObj.getTime())) return '';
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())}`;
+};
+
+// Helper to format date and time to local YYYY-MM-DDTHH:mm
+const getLocalDateTimeString = (d = new Date()) => {
+  const dateObj = typeof d === 'string' || typeof d === 'number' ? new Date(d) : d;
+  if (!dateObj || isNaN(dateObj.getTime())) return '';
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())}T${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;
+};
+
+// Helper to format time to local 12-hour hh:mm AM/PM
+const formatLocalTime = (d) => {
+  const dateObj = typeof d === 'string' || typeof d === 'number' ? new Date(d) : d;
+  if (!dateObj || isNaN(dateObj.getTime())) return '';
+  return dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+// Helper to combine local date string YYYY-MM-DD and local time YYYY-MM-DDTHH:mm
+const getCombinedDateTimeString = (dateStr, timeObj = new Date()) => {
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${dateStr}T${pad(timeObj.getHours())}:${pad(timeObj.getMinutes())}`;
+};
+
 export default function App() {
   const { user, token, loading: authLoading, isOnline, isOfflineView, login, register, logout } = useAuth();
   
@@ -297,7 +326,7 @@ export default function App() {
     sales.forEach(s => {
       const brokerIdVal = s.brokerId?._id || s.brokerId;
       if (!brokerIdVal) return;
-      const dateString = new Date(s.date).toISOString().substring(0, 10);
+      const dateString = getLocalDateString(s.date);
       const key = `${dateString}_${brokerIdVal}`;
       
       if (!groups[key]) {
@@ -676,7 +705,7 @@ export default function App() {
                       {g.sales.map((s, idx) => (
                         <div key={s._id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '0.85rem', borderBottom: idx < g.sales.length - 1 ? '1px dashed var(--border-color)' : 'none' }}>
                           <div>
-                            <strong>{s.vegetableName}</strong>: {s.quantity} {s.unit} @ ₹{s.unitPrice}
+                            <strong>{s.vegetableName}</strong> <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>({formatLocalTime(s.date)})</span>: {s.quantity} {s.unit} @ ₹{s.unitPrice}
                             <span style={{ fontSize: '0.75rem', display: 'block', color: 'var(--text-secondary)' }}>
                               Gross: ₹{s.grossAmount} | Net: ₹{s.netAmount}
                             </span>
@@ -753,7 +782,7 @@ export default function App() {
                   </div>
                   {p.note && <div className="item-detail" style={{ fontStyle: 'italic', margin: '4px 0' }}>"{p.note}"</div>}
                   <div className="item-detail" style={{ marginTop: '8px' }}>
-                    Received on {new Date(p.date).toLocaleDateString('en-IN')}
+                    Received on {new Date(p.date).toLocaleDateString('en-IN')} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>({formatLocalTime(p.date)})</span>
                   </div>
                 </div>
               ))}
@@ -921,7 +950,8 @@ export default function App() {
 
               setIsSavingSale(true);
               try {
-                await addSale(bId, veg, qty, unit, price, deductions, dateVal);
+                const dateISO = dateVal ? new Date(dateVal).toISOString() : new Date().toISOString();
+                await addSale(bId, veg, qty, unit, price, deductions, dateISO);
                 setShowAddSale(false);
               } catch (err) {
                 alert(err.message);
@@ -1097,8 +1127,8 @@ export default function App() {
                 )}
 
                 <div className="form-group">
-                  <label>Sale Date (तारीख)</label>
-                  <input type="date" name="date" className="input-field" defaultValue={new Date().toISOString().substring(0,10)} />
+                  <label>Sale Date (तारीख और समय)</label>
+                  <input type="datetime-local" name="date" className="input-field" defaultValue={getLocalDateTimeString()} />
                 </div>
 
                 <button type="submit" className="btn btn-primary" disabled={vegetables.length === 0 || isSavingSale}>
@@ -1149,7 +1179,8 @@ export default function App() {
               setIsSavingPayment(true);
               try {
                 // Pass billDate parameter, triggers backend distribution algorithm across portion sales
-                await addPayment(brokerIdVal, null, showCollectBillCash.dateString, amt, deductions, collectMethod, e.target.date.value, collectNote);
+                const paymentDateISO = e.target.date.value ? new Date(e.target.date.value).toISOString() : new Date().toISOString();
+                await addPayment(brokerIdVal, null, showCollectBillCash.dateString, amt, deductions, collectMethod, paymentDateISO, collectNote);
                 setShowCollectBillCash(null);
               } catch (err) {
                 alert(err.message);
@@ -1275,8 +1306,8 @@ export default function App() {
               </div>
 
               <div className="form-group">
-                <label>Payment Date</label>
-                <input type="date" name="date" className="input-field" defaultValue={new Date().toISOString().substring(0,10)} />
+                <label>Payment Date & Time (तारीख और समय)</label>
+                <input type="datetime-local" name="date" className="input-field" defaultValue={showCollectBillCash ? getCombinedDateTimeString(showCollectBillCash.dateString) : getLocalDateTimeString()} />
               </div>
 
               <div className="form-group">
@@ -1318,7 +1349,8 @@ export default function App() {
                   return;
                 }
                 try {
-                  await addPayment(generalPaymentBroker, null, null, amt, null, generalPaymentMethod, e.target.date.value, generalPaymentNote);
+                  const paymentDateISO = e.target.date.value ? new Date(e.target.date.value).toISOString() : new Date().toISOString();
+                  await addPayment(generalPaymentBroker, null, null, amt, null, generalPaymentMethod, paymentDateISO, generalPaymentNote);
                   setShowAddGeneralPayment(false);
                 } catch (err) {
                   alert(err.message);
@@ -1359,8 +1391,8 @@ export default function App() {
                 </div>
 
                 <div className="form-group">
-                  <label>Payment Date</label>
-                  <input type="date" name="date" className="input-field" defaultValue={new Date().toISOString().substring(0,10)} />
+                  <label>Payment Date & Time (तारीख और समय)</label>
+                  <input type="datetime-local" name="date" className="input-field" defaultValue={getLocalDateTimeString()} />
                 </div>
 
                 <div className="form-group">
@@ -1454,7 +1486,12 @@ export default function App() {
                       }))
                     ].sort((a,b) => new Date(b.date) - new Date(a.date)).map((item, idx) => (
                       <tr key={idx}>
-                        <td>{new Date(item.date).toLocaleDateString('en-IN', {month: 'short', day: 'numeric'})}</td>
+                        <td>
+                          {new Date(item.date).toLocaleDateString('en-IN', {month: 'short', day: 'numeric'})}
+                          <span style={{ fontSize: '0.75rem', display: 'block', color: 'var(--text-secondary)' }}>
+                            {formatLocalTime(item.date)}
+                          </span>
+                        </td>
                         <td>
                           <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>{item.desc}</span>
                         </td>
