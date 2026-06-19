@@ -116,6 +116,8 @@ export default function App() {
   const [selectedVeg, setSelectedVeg] = useState('');
   const [saleQty, setSaleQty] = useState('');
   const [salePrice, setSalePrice] = useState('');
+  const [isOverallSale, setIsOverallSale] = useState(false);
+  const [overallAmount, setOverallAmount] = useState('');
   const [selectedBrokerCommRate, setSelectedBrokerCommRate] = useState(6);
   const [saleLabor, setSaleLabor] = useState(0);
   const [saleTax, setSaleTax] = useState(0);
@@ -570,6 +572,8 @@ export default function App() {
                 setSaleLabor(0);
                 setSaleTax(0);
                 setSaleOther(0);
+                setIsOverallSale(false);
+                setOverallAmount('');
                 setShowAddSale(true);
               }} 
               disabled={isOfflineView}
@@ -718,7 +722,18 @@ export default function App() {
         <div className="dashboard-content">
           <div className="section-title">
             <span>Collective Daily Bills</span>
-            <span className="add-link" onClick={() => !isOfflineView && setShowAddSale(true)} style={{ opacity: isOfflineView ? 0.5 : 1 }}>
+            <span className="add-link" onClick={() => {
+              if (!isOfflineView) {
+                setSaleQty('');
+                setSalePrice('');
+                setSaleLabor(0);
+                setSaleTax(0);
+                setSaleOther(0);
+                setIsOverallSale(false);
+                setOverallAmount('');
+                setShowAddSale(true);
+              }
+            }} style={{ opacity: isOfflineView ? 0.5 : 1 }}>
               <Plus size={16} /> Add Sale
             </span>
           </div>
@@ -1132,7 +1147,6 @@ export default function App() {
               const veg = selectedVeg;
               const qty = Number(saleQty);
               const unit = e.target.unit.value;
-              const price = Number(salePrice);
               const dateVal = e.target.date.value;
 
               if (!bId) {
@@ -1145,7 +1159,32 @@ export default function App() {
                 return;
               }
 
-              const grossVal = qty * price;
+              if (isNaN(qty) || qty <= 0) {
+                alert("Please enter a valid quantity sold!");
+                return;
+              }
+
+              let price;
+              let grossVal;
+
+              if (isOverallSale) {
+                const amt = Number(overallAmount);
+                if (isNaN(amt) || amt <= 0) {
+                  alert("Please enter a valid overall amount!");
+                  return;
+                }
+                grossVal = amt;
+                price = Math.round((amt / qty) * 100) / 100;
+              } else {
+                const prc = Number(salePrice);
+                if (isNaN(prc) || prc <= 0) {
+                  alert("Please enter a valid unit price!");
+                  return;
+                }
+                price = prc;
+                grossVal = qty * prc;
+              }
+
               const commVal = (grossVal * selectedBrokerCommRate) / 100;
 
               const deductions = {
@@ -1303,31 +1342,66 @@ export default function App() {
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label>Unit Price (दर प्रति इकाई ₹)*</label>
+                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
                   <input 
-                    type="text" 
-                    className="input-field" 
-                    placeholder="e.g. 20"
-                    value={salePrice} 
-                    inputMode="decimal"
-                    onChange={handleNumericChange(setSalePrice)} 
-                    required 
+                    type="checkbox" 
+                    id="isOverallSale" 
+                    checked={isOverallSale} 
+                    onChange={e => {
+                      setIsOverallSale(e.target.checked);
+                      if (e.target.checked) {
+                        setSalePrice('');
+                      } else {
+                        setOverallAmount('');
+                      }
+                    }} 
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                   />
-                  <div className="incrementer-row">
-                    {[15, 20, 25, 30, 40, 50].map(val => (
-                      <button type="button" key={val} className="increment-btn" onClick={() => setSalePrice(val)}>₹{val}</button>
-                    ))}
-                  </div>
+                  <label htmlFor="isOverallSale" style={{ margin: 0, fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', color: 'var(--primary-color)' }}>
+                    Overall Sale (एकमुश्त / थोक बिल)
+                  </label>
                 </div>
 
+                {isOverallSale ? (
+                  <div className="form-group">
+                    <label>Overall Bill Amount (कुल बिल राशि ₹)*</label>
+                    <input 
+                      type="text" 
+                      className="input-field" 
+                      placeholder="e.g. 5000"
+                      value={overallAmount} 
+                      inputMode="decimal"
+                      onChange={handleNumericChange(setOverallAmount)} 
+                      required 
+                    />
+                  </div>
+                ) : (
+                  <div className="form-group">
+                    <label>Unit Price (दर प्रति इकाई ₹)*</label>
+                    <input 
+                      type="text" 
+                      className="input-field" 
+                      placeholder="e.g. 20"
+                      value={salePrice} 
+                      inputMode="decimal"
+                      onChange={handleNumericChange(setSalePrice)} 
+                      required 
+                    />
+                    <div className="incrementer-row">
+                      {[15, 20, 25, 30, 40, 50].map(val => (
+                        <button type="button" key={val} className="increment-btn" onClick={() => setSalePrice(val)}>₹{val}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Live Gross Value visual */}
-                {saleQty > 0 && salePrice > 0 && (
+                {((!isOverallSale && saleQty > 0 && salePrice > 0) || (isOverallSale && Number(overallAmount) > 0)) && (
                   <div className="item-card" style={{ marginBottom: '16px', border: '1px dashed var(--primary-color)' }}>
                     <div className="ledger-stat" style={{ borderTop: 'none', marginTop: 0, paddingTop: 0 }}>
                       <strong>Total Sales Value:</strong>
                       <strong style={{ color: 'var(--primary-color)' }}>
-                        ₹{(Number(saleQty) * Number(salePrice)).toLocaleString('en-IN')}
+                        ₹{Number(isOverallSale ? overallAmount : (Number(saleQty) * Number(salePrice))).toLocaleString('en-IN')}
                       </strong>
                     </div>
                   </div>
