@@ -188,20 +188,20 @@ export default function App() {
   const handleBrokerChange = (brokerId) => {
     const selected = brokers.find(b => b._id === brokerId);
     if (selected) {
-      setSelectedBrokerCommRate(selected.defaultCommission !== undefined ? selected.defaultCommission : 6);
+      setSelectedBrokerCommRate(selected.defaultCommission !== undefined ? selected.defaultCommission : 8);
     }
   };
 
   useEffect(() => {
     if (showAddSale && brokers.length > 0) {
-      setSelectedBrokerCommRate(brokers[0].defaultCommission !== undefined ? brokers[0].defaultCommission : 6);
+      setSelectedBrokerCommRate(brokers[0].defaultCommission !== undefined ? brokers[0].defaultCommission : 8);
     }
   }, [showAddSale, brokers]);
 
   // Reset collective deductions defaults when Daily Bill modal is opened
   useEffect(() => {
     if (showCollectBillCash) {
-      const defaultComm = showCollectBillCash.broker?.defaultCommission !== undefined ? showCollectBillCash.broker.defaultCommission : 6;
+      const defaultComm = showCollectBillCash.broker?.defaultCommission !== undefined ? showCollectBillCash.broker.defaultCommission : 8;
       setCollectCommRate(defaultComm === 0 ? '' : String(defaultComm));
       setCollectLabor('');
       setCollectTax('');
@@ -368,7 +368,7 @@ export default function App() {
       const brokerIdVal = s.brokerId?._id || s.brokerId;
       if (!brokerIdVal) return;
       const dateString = getLocalDateString(s.date);
-      const key = `${dateString}_${brokerIdVal}`;
+      const key = s.isOverallSale ? `${dateString}_${brokerIdVal}_overall_${s._id}` : `${dateString}_${brokerIdVal}`;
       
       if (!groups[key]) {
         groups[key] = {
@@ -381,7 +381,8 @@ export default function App() {
           totalNet: 0,
           totalPaid: 0,
           totalWeight: 0,
-          units: new Set()
+          units: new Set(),
+          isOverallSale: s.isOverallSale || false
         };
       }
       groups[key].sales.push(s);
@@ -443,6 +444,7 @@ export default function App() {
   const totalOutstanding = brokers.reduce((acc, curr) => acc + (curr.outstandingDue || 0), 0);
   const totalSalesVal = sales.reduce((acc, curr) => acc + (curr.netAmount || 0), 0);
   const totalReceivedVal = payments.reduce((acc, curr) => acc + (curr.amountReceived || 0), 0);
+  const totalBrokerage = payments.reduce((acc, curr) => acc + (curr.deductions?.commissionAmount || 0), 0);
 
   // Helper to restrict text inputs to numeric characters
   const handleNumericChange = (setter) => (e) => {
@@ -559,6 +561,10 @@ export default function App() {
             <div className="stat-card" style={{ gridColumn: 'span 2' }}>
               <div className="stat-label">Payments Received (प्राप्त भुगतान)</div>
               <div className="stat-val" style={{ color: '#0F9D58' }}>₹{totalReceivedVal.toLocaleString('en-IN')}</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total Brokerage Paid (कुल कमीशन):</span>
+                <strong style={{ color: 'var(--danger-text)' }}>₹{totalBrokerage.toLocaleString('en-IN')}</strong>
+              </div>
             </div>
           </div>
 
@@ -753,8 +759,13 @@ export default function App() {
                     style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                   >
                     <div>
-                      <strong style={{ fontSize: '1.05rem', color: 'var(--primary-color)', display: 'block' }}>
-                        {g.broker?.name || 'Unknown'} ({g.broker?.mandiName})
+                      <strong style={{ fontSize: '1.05rem', color: 'var(--primary-color)', display: 'block', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                        <span>{g.broker?.name || 'Unknown'} ({g.broker?.mandiName})</span>
+                        {g.isOverallSale && (
+                          <span style={{ fontSize: '0.7rem', backgroundColor: '#e2f0d9', color: '#385723', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                            Overall Sale (एकमुश्त)
+                          </span>
+                        )}
                       </strong>
                       <span className="item-detail" style={{ fontSize: '0.85rem' }}>
                         {new Date(g.date).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })}
@@ -1197,7 +1208,7 @@ export default function App() {
               setIsSavingSale(true);
               try {
                 const dateISO = dateVal ? new Date(dateVal).toISOString() : new Date().toISOString();
-                await addSale(bId, veg, qty, unit, price, deductions, dateISO);
+                await addSale(bId, veg, qty, unit, price, deductions, dateISO, isOverallSale);
                 setShowAddSale(false);
               } catch (err) {
                 alert(err.message);
@@ -1459,9 +1470,15 @@ export default function App() {
 
               setIsSavingPayment(true);
               try {
-                // Pass billDate parameter, triggers backend distribution algorithm across portion sales
                 const paymentDateISO = e.target.date.value ? new Date(e.target.date.value).toISOString() : new Date().toISOString();
-                await addPayment(brokerIdVal, null, showCollectBillCash.dateString, amt, deductions, collectMethod, paymentDateISO, collectNote);
+                if (showCollectBillCash.isOverallSale) {
+                  // If overall sale, pay directly to the sale record by passing saleId
+                  const saleIdVal = showCollectBillCash.sales[0]._id;
+                  await addPayment(brokerIdVal, saleIdVal, null, amt, deductions, collectMethod, paymentDateISO, collectNote);
+                } else {
+                  // Standard collective daily bill payment
+                  await addPayment(brokerIdVal, null, showCollectBillCash.dateString, amt, deductions, collectMethod, paymentDateISO, collectNote);
+                }
                 setShowCollectBillCash(null);
               } catch (err) {
                 alert(err.message);
