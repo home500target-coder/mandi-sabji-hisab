@@ -167,14 +167,14 @@ export const useOfflineCache = () => {
     }
   };
 
-  const addSale = async (brokerId, vegetableName, quantity, unit, unitPrice, deductions, date) => {
+  const addSale = async (brokerId, vegetableName, quantity, unit, unitPrice, deductions, date, isOverallSale) => {
     if (!isOnline) throw new Error('Offline: Cannot save sale while offline.');
 
     // Direct portion sales are logged without deductions at input time
     const res = await fetch(`${API_URL}/sales`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ brokerId, vegetableName, quantity, unit, unitPrice, date })
+      body: JSON.stringify({ brokerId, vegetableName, quantity, unit, unitPrice, date, isOverallSale })
     });
 
     if (res.ok) {
@@ -225,11 +225,11 @@ export const useOfflineCache = () => {
         const localSales = await db.sales.toArray();
         const brokerIdVal = newPayment.brokerId._id || newPayment.brokerId;
 
-        // Filter sales for this broker and date
+        // Filter sales for this broker and date, excluding overall sales
         const targetSales = localSales.filter(s => {
           const sBrokerId = s.brokerId._id || s.brokerId;
           const sDateString = getLocalDateString(s.date);
-          return sBrokerId === brokerIdVal && sDateString === billDate;
+          return sBrokerId === brokerIdVal && sDateString === billDate && !s.isOverallSale;
         }).sort((a, b) => new Date(a.date) - new Date(b.date));
 
         let amountLeft = totalCredit;
