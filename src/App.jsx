@@ -403,26 +403,63 @@ export default function App() {
       }
 
       // Calculate cash received and deductions for this daily bill
-      const billPayments = payments.filter(p => {
+      // 1. Get targeted payments (specifically paying this bill's sales using saleId)
+      const targetedPayments = payments.filter(p => {
         const pBrokerId = p.brokerId?._id || p.brokerId;
         const gBrokerId = g.broker?._id || g.broker;
-        return pBrokerId === gBrokerId && p.billDate === g.dateString;
+        if (pBrokerId !== gBrokerId) return false;
+        return g.sales.some(s => s._id === p.saleId);
       });
 
-      const totalCashReceived = billPayments.reduce((sum, p) => sum + (p.amountReceived || 0), 0);
-      const totalDeductions = billPayments.reduce((sum, p) => {
+      const targetedCash = targetedPayments.reduce((sum, p) => sum + (p.amountReceived || 0), 0);
+      const targetedDeductions = targetedPayments.reduce((sum, p) => {
         const d = p.deductions || {};
-        const comm = d.commissionAmount || 0;
-        const labor = d.laborCharges || 0;
-        const tax = d.mandiTax || 0;
-        const other = d.otherDeductions || 0;
-        return sum + comm + labor + tax + other;
+        return sum + (d.commissionAmount || 0) + (d.laborCharges || 0) + (d.mandiTax || 0) + (d.otherDeductions || 0);
       }, 0);
 
-      // If we have payments matching, use them. Otherwise, fallback to totalPaid as cash received.
-      const hasPayments = billPayments.length > 0;
-      const cashReceived = hasPayments ? totalCashReceived : g.totalPaid;
-      const deductions = hasPayments ? totalDeductions : 0;
+      // 2. Get collective payments (without saleId) matching date and broker
+      const collectivePayments = payments.filter(p => {
+        const pBrokerId = p.brokerId?._id || p.brokerId;
+        const gBrokerId = g.broker?._id || g.broker;
+        return pBrokerId === gBrokerId && p.billDate === g.dateString && !p.saleId;
+      });
+
+      const totalCollectiveCash = collectivePayments.reduce((sum, p) => sum + (p.amountReceived || 0), 0);
+      const totalCollectiveDeductions = collectivePayments.reduce((sum, p) => {
+        const d = p.deductions || {};
+        return sum + (d.commissionAmount || 0) + (d.laborCharges || 0) + (d.mandiTax || 0) + (d.otherDeductions || 0);
+      }, 0);
+
+      // Calculate collective paid amount for the whole day to compute proportion
+      const daySales = sales.filter(s => {
+        const sBrokerId = s.brokerId?._id || s.brokerId;
+        const gBrokerId = g.broker?._id || g.broker;
+        return sBrokerId === gBrokerId && getLocalDateString(s.date) === g.dateString;
+      });
+
+      const getCollectivePaidForSale = (s) => {
+        const sTargeted = payments.filter(p => p.saleId === s._id);
+        const sTargetedTotal = sTargeted.reduce((sum, p) => {
+          const d = p.deductions || {};
+          const totalCred = (p.amountReceived || 0) + (d.commissionAmount || 0) + (d.laborCharges || 0) + (d.mandiTax || 0) + (d.otherDeductions || 0);
+          return sum + totalCred;
+        }, 0);
+        return Math.max(0, s.amountPaid - sTargetedTotal);
+      };
+
+      const dayTotalCollectivePaid = daySales.reduce((sum, s) => sum + getCollectivePaidForSale(s), 0);
+      const groupTotalCollectivePaid = g.sales.reduce((sum, s) => sum + getCollectivePaidForSale(s), 0);
+
+      let share = 0;
+      if (dayTotalCollectivePaid > 0) {
+        share = groupTotalCollectivePaid / dayTotalCollectivePaid;
+      } else {
+        const dayGroupsCount = new Set(daySales.map(s => s.isOverallSale ? `${getLocalDateString(s.date)}_${s.brokerId?._id || s.brokerId}_overall_${s._id}` : `${getLocalDateString(s.date)}_${s.brokerId?._id || s.brokerId}`)).size;
+        share = dayGroupsCount > 0 ? 1 / dayGroupsCount : 1;
+      }
+
+      const cashReceived = targetedCash + (totalCollectiveCash * share);
+      const deductions = targetedDeductions + (totalCollectiveDeductions * share);
 
       return {
         ...g,
