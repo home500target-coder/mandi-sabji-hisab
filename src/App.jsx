@@ -482,6 +482,8 @@ export default function App() {
   const totalSalesVal = sales.reduce((acc, curr) => acc + (curr.netAmount || 0), 0);
   const totalReceivedVal = payments.reduce((acc, curr) => acc + (curr.amountReceived || 0), 0);
   const totalBrokerage = payments.reduce((acc, curr) => acc + (curr.deductions?.commissionAmount || 0), 0);
+  const totalExpenses = expenses.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+  const netProfit = totalReceivedVal - totalExpenses;
 
   // Helper to restrict text inputs to numeric characters
   const handleNumericChange = (setter) => (e) => {
@@ -598,9 +600,19 @@ export default function App() {
             <div className="stat-card" style={{ gridColumn: 'span 2' }}>
               <div className="stat-label">Payments Received (प्राप्त भुगतान)</div>
               <div className="stat-val" style={{ color: '#0F9D58' }}>₹{totalReceivedVal.toLocaleString('en-IN')}</div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>Total Brokerage Paid (कुल कमीशन):</span>
-                <strong style={{ color: 'var(--danger-text)' }}>₹{totalBrokerage.toLocaleString('en-IN')}</strong>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Total Brokerage Paid (कुल कमीशन):</span>
+                  <strong style={{ color: 'var(--danger-text)' }}>₹{totalBrokerage.toLocaleString('en-IN')}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Total Expenses (कुल खर्च/लागत):</span>
+                  <strong style={{ color: 'var(--danger-text)' }}>₹{totalExpenses.toLocaleString('en-IN')}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-color)', paddingTop: '6px', marginTop: '2px' }}>
+                  <span>Net Profit (शुद्ध लाभ):</span>
+                  <strong style={{ color: netProfit >= 0 ? '#0F9D58' : 'var(--danger-text)' }}>₹{netProfit.toLocaleString('en-IN')}</strong>
+                </div>
               </div>
             </div>
           </div>
