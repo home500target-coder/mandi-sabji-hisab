@@ -20,7 +20,9 @@ import {
   Wifi,
   WifiOff,
   Sprout,
-  Notebook
+  Notebook,
+  Trash2,
+  Edit3
 } from 'lucide-react';
 
 // Helper to format date to local YYYY-MM-DD
@@ -53,7 +55,19 @@ const getCombinedDateTimeString = (dateStr, timeObj = new Date()) => {
 };
 
 export default function App() {
-  const { user, token, loading: authLoading, isOnline, isOfflineView, login, register, logout } = useAuth();
+  const { 
+    user, 
+    token, 
+    loading: authLoading, 
+    isOnline, 
+    isOfflineView, 
+    login, 
+    register, 
+    logout, 
+    savedAccounts, 
+    switchAccount, 
+    removeSavedAccount 
+  } = useAuth();
   
   // Custom sync and IndexedDB caching hook
   const { 
@@ -68,7 +82,13 @@ export default function App() {
     addVegetable,
     addSale, 
     addPayment,
-    addExpense
+    addExpense,
+    editSale,
+    deleteSale,
+    editExpense,
+    deleteExpense,
+    deletePayment,
+    deleteBroker
   } = useOfflineCache();
 
   // Helper to resolve vegetable name from ID or object
@@ -82,6 +102,9 @@ export default function App() {
 
   // Tab State: 'dashboard', 'brokers', 'sales', 'payments', 'expenses'
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showAccountSwitcher, setShowAccountSwitcher] = useState(true);
+  const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
   
   // Modals visibility states
   const [showAddBroker, setShowAddBroker] = useState(false);
@@ -150,6 +173,61 @@ export default function App() {
   const [generalPaymentMethod, setGeneralPaymentMethod] = useState('Cash');
   const [generalPaymentNote, setGeneralPaymentNote] = useState('');
 
+  // Editing states
+  const [editingSale, setEditingSale] = useState(null);
+  const [editSaleBrokerId, setEditSaleBrokerId] = useState('');
+  const [editSaleVeg, setEditSaleVeg] = useState('');
+  const [editSaleQty, setEditSaleQty] = useState('');
+  const [editSaleUnit, setEditSaleUnit] = useState('Kg');
+  const [editSaleIsOverall, setEditSaleIsOverall] = useState(false);
+  const [editSalePrice, setEditSalePrice] = useState('');
+  const [editSaleOverallAmt, setEditSaleOverallAmt] = useState('');
+  const [editSaleDate, setEditSaleDate] = useState('');
+  const [isSavingEditSale, setIsSavingEditSale] = useState(false);
+
+  const [editingExpense, setEditingExpense] = useState(null);
+  const [editExpenseCategory, setEditExpenseCategory] = useState('Crop Investment');
+  const [editExpenseVegId, setEditExpenseVegId] = useState('');
+  const [editExpenseTitle, setEditExpenseTitle] = useState('');
+  const [editExpenseAmount, setEditExpenseAmount] = useState('');
+  const [editExpenseNote, setEditExpenseNote] = useState('');
+  const [isSavingEditExpense, setIsSavingEditExpense] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [alertDialog, setAlertDialog] = useState(null);
+
+  const showAlert = (message) => {
+    setAlertDialog({ message });
+  };
+
+  // Synchronize edit states when items are selected
+  useEffect(() => {
+    if (editingSale) {
+      setEditSaleBrokerId(editingSale.brokerId?._id || editingSale.brokerId || '');
+      setEditSaleVeg(editingSale.vegetableName || '');
+      setEditSaleQty(editingSale.quantity || '');
+      setEditSaleUnit(editingSale.unit || 'Kg');
+      setEditSaleIsOverall(editingSale.isOverallSale || false);
+      if (editingSale.isOverallSale) {
+        setEditSaleOverallAmt(editingSale.grossAmount || '');
+        setEditSalePrice('');
+      } else {
+        setEditSalePrice(editingSale.unitPrice || '');
+        setEditSaleOverallAmt('');
+      }
+      setEditSaleDate(getLocalDateTimeString(editingSale.date));
+    }
+  }, [editingSale]);
+
+  useEffect(() => {
+    if (editingExpense) {
+      setEditExpenseCategory(editingExpense.category || 'Crop Investment');
+      setEditExpenseVegId(editingExpense.vegetableId?._id || editingExpense.vegetableId || '');
+      setEditExpenseTitle(editingExpense.title || '');
+      setEditExpenseAmount(editingExpense.amount || '');
+      setEditExpenseNote(editingExpense.note || '');
+    }
+  }, [editingExpense]);
+
   // Loading states for API requests
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isSavingSale, setIsSavingSale] = useState(false);
@@ -157,24 +235,54 @@ export default function App() {
   const [isSavingBroker, setIsSavingBroker] = useState(false);
   const [isSavingPayment, setIsSavingPayment] = useState(false);
 
-  // Sync data on load
+  // Sync data on load and reset active user selection/modal states
   useEffect(() => {
-    if (token) {
-      refreshData();
-    }
+    const handleSync = async () => {
+      if (token) {
+        setIsSwitchingAccount(true);
+        try {
+          await refreshData();
+        } catch (e) {
+          console.error('Account data sync failed:', e);
+        } finally {
+          setIsSwitchingAccount(false);
+        }
+        setSelectedBrokerId('');
+        setSelectedVeg('');
+        setExpenseVegId('');
+        setGeneralPaymentBroker('');
+        setActiveBrokerLedger(null);
+        setShowCollectBillCash(null);
+        setShowAddSale(false);
+        setShowAddGeneralPayment(false);
+        setShowAddVegModal(false);
+        setShowAddExpense(false);
+      }
+    };
+    handleSync();
   }, [token, refreshData]);
 
-  // Set default selection state variables when lists load
+  // Set default selection state variables when lists load and validate selections on update
   useEffect(() => {
-    if (vegetables.length > 0 && !selectedVeg) {
-      setSelectedVeg(vegetables[0].name);
+    if (vegetables.length > 0) {
+      const isSelectedVegValid = vegetables.some(v => v.name === selectedVeg);
+      if (!selectedVeg || !isSelectedVegValid) {
+        setSelectedVeg(vegetables[0].name);
+      }
+    } else {
+      setSelectedVeg('');
     }
   }, [vegetables, selectedVeg]);
 
   useEffect(() => {
-    if (brokers.length > 0 && !selectedBrokerId) {
-      setSelectedBrokerId(brokers[0]._id);
-      handleBrokerChange(brokers[0]._id);
+    if (brokers.length > 0) {
+      const isSelectedBrokerValid = brokers.some(b => b._id === selectedBrokerId);
+      if (!selectedBrokerId || !isSelectedBrokerValid) {
+        setSelectedBrokerId(brokers[0]._id);
+        handleBrokerChange(brokers[0]._id);
+      }
+    } else {
+      setSelectedBrokerId('');
     }
   }, [brokers, selectedBrokerId]);
 
@@ -255,6 +363,129 @@ export default function App() {
     }
   };
 
+  const handleEditSaleClick = (sale) => {
+    if (sale.amountPaid > 0) {
+      showAlert("Cannot edit this sale because a payment is already registered against it. Please delete the payment first.");
+      return;
+    }
+    setEditingSale(sale);
+  };
+
+  const handleDeleteSaleClick = (sale) => {
+    if (sale.amountPaid > 0) {
+      showAlert("Cannot delete this sale because a payment is already registered against it. Please delete the payment first.");
+      return;
+    }
+    setConfirmDialog({
+      message: `Are you sure you want to delete the sale for ${sale.vegetableName} (${sale.quantity} ${sale.unit})? This will update the broker outstanding due balance.`,
+      onConfirm: async () => {
+        try {
+          await deleteSale(sale._id);
+        } catch (err) {
+          showAlert(err.message);
+        }
+      },
+      isDanger: true
+    });
+  };
+
+  const handleEditExpenseClick = (expense) => {
+    setEditingExpense(expense);
+  };
+
+  const handleDeleteExpenseClick = (expense) => {
+    setConfirmDialog({
+      message: `Are you sure you want to delete the expense "${expense.title}" for ₹${expense.amount}?`,
+      onConfirm: async () => {
+        try {
+          await deleteExpense(expense._id);
+        } catch (err) {
+          showAlert(err.message);
+        }
+      },
+      isDanger: true
+    });
+  };
+
+  const handleDeletePaymentClick = (payment) => {
+    const detailText = payment.billDate 
+      ? `applied to daily bill on ${new Date(payment.billDate).toLocaleDateString('en-IN')}` 
+      : 'recorded as general payment';
+    setConfirmDialog({
+      message: `Are you sure you want to delete the payment receipt of ₹${payment.amountReceived} from ${payment.brokerId?.name || 'broker'} (${detailText})? This will restore the broker's outstanding balance.`,
+      onConfirm: async () => {
+        try {
+          await deletePayment(payment._id);
+        } catch (err) {
+          showAlert(err.message);
+        }
+      },
+      isDanger: true
+    });
+  };
+
+  if (isSwitchingAccount) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        width: '100vw',
+        background: 'linear-gradient(135deg, #F4FAF6 0%, #E8F5E9 100%)',
+        fontFamily: "'Outfit', sans-serif"
+      }}>
+        <div style={{
+          position: 'relative',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          width: '80px',
+          height: '80px',
+          borderRadius: '50%',
+          backgroundColor: '#ffffff',
+          boxShadow: '0 8px 24px rgba(46, 125, 50, 0.1)',
+          marginBottom: '24px'
+        }}>
+          <Sprout size={36} color="var(--primary-color)" style={{
+            animation: 'pulse 1.5s infinite ease-in-out'
+          }} />
+          <div style={{
+            position: 'absolute',
+            width: '90px',
+            height: '90px',
+            borderRadius: '50%',
+            border: '3px solid transparent',
+            borderTopColor: 'var(--primary-color)',
+            animation: 'spin 1s infinite linear'
+          }}></div>
+        </div>
+
+        <h2 style={{ color: 'var(--text-main)', fontSize: '1.4rem', fontWeight: 600, marginBottom: '8px' }}>
+          Switching Account
+        </h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: 0, textAlign: 'center', padding: '0 24px' }}>
+          Loading your vegetable ledger data...
+        </p>
+        <p style={{ color: 'var(--primary-color)', fontSize: '0.85rem', fontWeight: 500, marginTop: '12px' }}>
+          खाता बदला जा रहा है, कृपया प्रतीक्षा करें
+        </p>
+
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.15); opacity: 1; }
+          }
+        `}} />
+      </div>
+    );
+  }
+
   if (authLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -265,6 +496,162 @@ export default function App() {
 
   // --- UNAUTHENTICATED SCREEN ---
   if (!user) {
+    if (savedAccounts.length > 0 && showAccountSwitcher) {
+      return (
+        <div className="app-container">
+          <div className="auth-container">
+            <div className="auth-card" style={{ padding: '24px 20px' }}>
+              <div className="auth-header" style={{ marginBottom: '24px' }}>
+                <h1 style={{ color: 'var(--primary-color)', fontSize: '2.2rem', fontWeight: 700, marginBottom: '6px' }}>सब्जी हिसाब</h1>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: 0 }}>Mandi Sabji Hisab - Farmer Ledger PWA</p>
+              </div>
+
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '16px', textAlign: 'left', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+                Saved Accounts (सुरक्षित खाते)
+              </h3>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px', maxHeight: '320px', overflowY: 'auto' }}>
+                {savedAccounts.map(acc => {
+                  const initials = acc.farmerName ? acc.farmerName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '?';
+                  return (
+                    <div 
+                      key={acc.username}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '12px',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '12px',
+                        backgroundColor: 'var(--bg-color)',
+                        transition: 'var(--transition)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '50%',
+                          backgroundColor: 'var(--primary-color)',
+                          color: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 600,
+                          fontSize: '0.95rem'
+                        }}>
+                          {initials}
+                        </div>
+                        <div style={{ textAlign: 'left' }}>
+                          <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)' }}>{acc.farmerName}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            @{acc.username} {acc.villageName ? `• ${acc.villageName}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button 
+                          onClick={async () => {
+                            try {
+                              setIsAuthSubmitting(true);
+                              setAuthError('');
+                              await switchAccount(acc.username);
+                            } catch (e) {
+                              setAuthError(e.message || 'Failed to switch account');
+                            } finally {
+                              setIsAuthSubmitting(false);
+                            }
+                          }}
+                          className="btn btn-primary"
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '0.8rem',
+                            borderRadius: '8px',
+                            margin: 0
+                          }}
+                          disabled={isAuthSubmitting}
+                        >
+                          Login
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setConfirmDialog({
+                              message: `Are you sure you want to remove ${acc.farmerName}'s account from this device? This will also delete their offline cached database.`,
+                              onConfirm: () => removeSavedAccount(acc.username),
+                              isDanger: true
+                            });
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#C62828',
+                            cursor: 'pointer',
+                            padding: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                          title="Remove Account"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {authError && (
+                <div style={{ color: '#C62828', backgroundColor: '#FFEBEE', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.9rem' }}>
+                  {authError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button 
+                  type="button"
+                  className="btn btn-primary" 
+                  style={{
+                    backgroundColor: 'transparent',
+                    color: 'var(--primary-color)',
+                    border: '1px solid var(--primary-color)'
+                  }}
+                  onClick={() => {
+                    setIsRegisterMode(false);
+                    setShowAccountSwitcher(false);
+                    setUsername('');
+                    setPassword('');
+                    setAuthError('');
+                  }}
+                >
+                  Log in to Another Account
+                </button>
+                
+                <button 
+                  type="button"
+                  className="link-btn"
+                  onClick={() => {
+                    setIsRegisterMode(true);
+                    setShowAccountSwitcher(false);
+                    setFarmerName('');
+                    setVillageName('');
+                    setPhone('');
+                    setUsername('');
+                    setPassword('');
+                    setAuthError('');
+                  }}
+                >
+                  Create New Account (नया खाता बनाएं)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="app-container">
         <div className="auth-container">
@@ -355,6 +742,20 @@ export default function App() {
             >
               {isRegisterMode ? 'Already have an account? Login' : "Don't have an account? Register"}
             </button>
+
+            {savedAccounts.length > 0 && (
+              <button 
+                type="button"
+                className="link-btn" 
+                style={{ marginTop: '8px', color: 'var(--text-secondary)', display: 'block', width: '100%' }}
+                onClick={() => {
+                  setShowAccountSwitcher(true);
+                  setAuthError('');
+                }}
+              >
+                ← Back to Saved Accounts (सुरक्षित खाते)
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -512,7 +913,7 @@ export default function App() {
       setInlineVegName('');
       setShowInlineVegInput(false);
     } catch (err) {
-      alert(err.message);
+      showAlert(err.message);
     } finally {
       setIsSavingVeg(false);
     }
@@ -522,7 +923,7 @@ export default function App() {
   const handleAddInlineBroker = async (e) => {
     e.preventDefault();
     if (!inlineBrokerName.trim() || !inlineMandiName.trim()) {
-      alert("Broker name and Mandi name are required!");
+      showAlert("Broker name and Mandi name are required!");
       return;
     }
     setIsSavingBroker(true);
@@ -541,7 +942,7 @@ export default function App() {
       setInlineBrokerComm('');
       setShowInlineBrokerInput(false);
     } catch (err) {
-      alert(err.message);
+      showAlert(err.message);
     } finally {
       setIsSavingBroker(false);
     }
@@ -550,12 +951,102 @@ export default function App() {
   return (
     <div className="app-container">
       {/* HEADER BAR */}
-      <header className="app-header">
+      <header className="app-header" style={{ position: 'relative' }}>
         <div>
           <span className="app-title">मंडी सब्जी हिसाब</span>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            किसान: {user.farmerName}
+          <div 
+            onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)} 
+            style={{ 
+              fontSize: '0.8rem', 
+              color: 'var(--text-secondary)', 
+              cursor: 'pointer', 
+              display: 'inline-flex', 
+              alignItems: 'center', 
+              gap: '4px',
+              backgroundColor: 'rgba(0,0,0,0.03)',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              marginTop: '2px',
+              userSelect: 'none'
+            }}
+          >
+            <span>किसान: <strong>{user.farmerName}</strong></span>
+            <ChevronDown size={12} />
           </div>
+
+          {isAccountDropdownOpen && (
+            <div style={{
+              position: 'absolute',
+              top: '56px',
+              left: '20px',
+              backgroundColor: 'var(--card-bg)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius)',
+              boxShadow: 'var(--shadow-lg)',
+              zIndex: 1000,
+              width: '240px',
+              padding: '8px 0',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <div style={{ padding: '8px 16px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                Switch Account (खाता बदलें)
+              </div>
+              <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                {savedAccounts.map(acc => {
+                  const isActive = acc.username.toLowerCase() === user.username.toLowerCase();
+                  return (
+                    <div 
+                      key={acc.username}
+                      onClick={async () => {
+                        if (!isActive) {
+                          setIsAccountDropdownOpen(false);
+                          await switchAccount(acc.username);
+                        }
+                      }}
+                      style={{
+                        padding: '10px 16px',
+                        cursor: isActive ? 'default' : 'pointer',
+                        backgroundColor: isActive ? 'rgba(46, 125, 50, 0.05)' : 'transparent',
+                        color: isActive ? 'var(--primary-color)' : 'var(--text-main)',
+                        fontWeight: isActive ? '600' : 'normal',
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+                        <span>{acc.farmerName}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>@{acc.username}</span>
+                      </div>
+                      {isActive && <span style={{ fontSize: '0.75rem', color: 'var(--primary-color)', fontWeight: 600 }}>• Active</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '4px' }}></div>
+              <div 
+                onClick={() => {
+                  setIsAccountDropdownOpen(false);
+                  logout();
+                }}
+                style={{
+                  padding: '10px 16px',
+                  cursor: 'pointer',
+                  color: 'var(--primary-color)',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Plus size={16} />
+                <span>Add Account (नया जोड़ें)</span>
+              </div>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {isOnline ? (
@@ -859,7 +1350,35 @@ export default function App() {
                               Gross: ₹{s.grossAmount} | Net: ₹{s.netAmount}
                             </span>
                           </div>
-                          <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>₹{s.netAmount}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>₹{s.netAmount}</span>
+                            {!isOfflineView && (
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditSaleClick(s);
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                  title="Edit Sale"
+                                >
+                                  <Edit3 size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteSaleClick(s);
+                                  }}
+                                  style={{ background: 'none', border: 'none', color: '#E53935', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                  title="Delete Sale"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -930,8 +1449,22 @@ export default function App() {
                     </span>
                   </div>
                   {p.note && <div className="item-detail" style={{ fontStyle: 'italic', margin: '4px 0' }}>"{p.note}"</div>}
-                  <div className="item-detail" style={{ marginTop: '8px' }}>
-                    Received on {new Date(p.date).toLocaleDateString('en-IN')} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>({formatLocalTime(p.date)})</span>
+                  <div className="item-detail" style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>
+                      Received on {new Date(p.date).toLocaleDateString('en-IN')} <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>({formatLocalTime(p.date)})</span>
+                    </span>
+                    {!isOfflineView && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeletePaymentClick(p);
+                        }}
+                        style={{ background: 'none', border: 'none', color: '#E53935', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.75rem' }}
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1059,8 +1592,32 @@ export default function App() {
                     <strong style={{ color: '#E53935', fontSize: '1.1rem' }}>-₹{e.amount.toLocaleString('en-IN')}</strong>
                   </div>
                   {e.note && <div className="item-detail" style={{ fontStyle: 'italic', marginTop: '4px' }}>"{e.note}"</div>}
-                  <div className="item-detail" style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                  <div className="item-detail" style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
                     <span>{new Date(e.date).toLocaleDateString('en-IN')} {formatLocalTime(e.date)}</span>
+                    {!isOfflineView && (
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <button
+                          type="button"
+                          onClick={(evt) => {
+                            evt.stopPropagation();
+                            handleEditExpenseClick(e);
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.75rem' }}
+                        >
+                          <Edit3 size={12} /> Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(evt) => {
+                            evt.stopPropagation();
+                            handleDeleteExpenseClick(e);
+                          }}
+                          style={{ background: 'none', border: 'none', color: '#E53935', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', fontSize: '0.75rem' }}
+                        >
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1109,7 +1666,7 @@ export default function App() {
                 await addVegetable(vName);
                 setShowAddVegModal(false);
               } catch (err) {
-                alert(err.message);
+                showAlert(err.message);
               } finally {
                 setIsSavingVeg(false);
               }
@@ -1145,7 +1702,7 @@ export default function App() {
                 await addBroker(bName, bMandi, bPhone, bComm ? Number(bComm) : 6);
                 setShowAddBroker(false);
               } catch (err) {
-                alert(err.message);
+                showAlert(err.message);
               } finally {
                 setIsSavingBroker(false);
               }
@@ -1205,24 +1762,26 @@ export default function App() {
               e.preventDefault();
               const bId = selectedBrokerId;
               const veg = selectedVeg;
-              const qty = Number(saleQty);
-              const unit = e.target.unit.value;
               const dateVal = e.target.date.value;
 
               if (!bId) {
-                alert("Please select or register a broker first!");
+                showAlert("Please select or register a broker first!");
                 return;
               }
 
               if (!veg) {
-                alert("Please select or create a vegetable first!");
+                showAlert("Please select or create a vegetable first!");
                 return;
               }
 
-              if (isNaN(qty) || qty <= 0) {
-                alert("Please enter a valid quantity sold!");
+              const hasQty = saleQty && !isNaN(Number(saleQty)) && Number(saleQty) > 0;
+              if (!isOverallSale && !hasQty) {
+                showAlert("Please enter a valid quantity sold!");
                 return;
               }
+
+              const qty = hasQty ? Number(saleQty) : 1;
+              const unit = e.target.unit.value || 'Lump Sum';
 
               let price;
               let grossVal;
@@ -1230,7 +1789,7 @@ export default function App() {
               if (isOverallSale) {
                 const amt = Number(overallAmount);
                 if (isNaN(amt) || amt <= 0) {
-                  alert("Please enter a valid overall amount!");
+                  showAlert("Please enter a valid overall amount!");
                   return;
                 }
                 grossVal = amt;
@@ -1238,7 +1797,7 @@ export default function App() {
               } else {
                 const prc = Number(salePrice);
                 if (isNaN(prc) || prc <= 0) {
-                  alert("Please enter a valid unit price!");
+                  showAlert("Please enter a valid unit price!");
                   return;
                 }
                 price = prc;
@@ -1260,7 +1819,7 @@ export default function App() {
                 await addSale(bId, veg, qty, unit, price, deductions, dateISO, isOverallSale);
                 setShowAddSale(false);
               } catch (err) {
-                alert(err.message);
+                showAlert(err.message);
               } finally {
                 setIsSavingSale(false);
               }
@@ -1380,7 +1939,7 @@ export default function App() {
                 </div>
 
                 <div className="form-group">
-                  <label>Quantity Sold (बेची गई मात्रा)*</label>
+                  <label>Quantity Sold (बेची गई मात्रा){isOverallSale ? ' (Optional)' : '*'}</label>
                   <input 
                     type="text" 
                     className="input-field" 
@@ -1388,13 +1947,14 @@ export default function App() {
                     value={saleQty} 
                     inputMode="decimal"
                     onChange={handleNumericChange(setSaleQty)} 
-                    required 
+                    required={!isOverallSale} 
                   />
                 </div>
                 
                 <div className="form-group">
-                  <label>Selling Unit (इकाई)*</label>
+                  <label>Selling Unit (इकाई){isOverallSale ? ' (Optional)' : '*'}</label>
                   <select name="unit" className="input-field">
+                    {isOverallSale && <option value="">-- None / Lump Sum --</option>}
                     <option value="Kg">Kg (किलो)</option>
                     <option value="Crates">Crates (क्रेट)</option>
                     <option value="Bags">Bags (बोरी)</option>
@@ -1503,7 +2063,7 @@ export default function App() {
               e.preventDefault();
               const amt = Number(collectAmount);
               if (amt <= 0) {
-                alert("Please enter a valid amount");
+                showAlert("Please enter a valid amount");
                 return;
               }
               const brokerIdVal = showCollectBillCash.broker._id || showCollectBillCash.broker;
@@ -1530,7 +2090,7 @@ export default function App() {
                 }
                 setShowCollectBillCash(null);
               } catch (err) {
-                alert(err.message);
+                showAlert(err.message);
               } finally {
                 setIsSavingPayment(false);
               }
@@ -1694,7 +2254,7 @@ export default function App() {
                 e.preventDefault();
                 const amt = Number(generalPaymentAmount);
                 if (amt <= 0) {
-                  alert("Please enter a valid amount");
+                  showAlert("Please enter a valid amount");
                   return;
                 }
                 setIsSavingPayment(true);
@@ -1703,7 +2263,7 @@ export default function App() {
                   await addPayment(generalPaymentBroker, null, null, amt, null, generalPaymentMethod, paymentDateISO, generalPaymentNote);
                   setShowAddGeneralPayment(false);
                 } catch (err) {
-                  alert(err.message);
+                  showAlert(err.message);
                 } finally {
                   setIsSavingPayment(false);
                 }
@@ -1797,6 +2357,40 @@ export default function App() {
               </div>
             </div>
 
+            {!isOfflineView && (
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDialog({
+                    message: `Are you sure you want to delete the broker profile for "${activeBrokerLedger.name}"? This action cannot be undone and is only allowed if they have no registered sales or payments.`,
+                    onConfirm: async () => {
+                      try {
+                        await deleteBroker(activeBrokerLedger._id);
+                        setActiveBrokerLedger(null);
+                      } catch (err) {
+                        showAlert(err.message);
+                      }
+                    },
+                    isDanger: true
+                  });
+                }}
+                className="btn btn-secondary"
+                style={{ 
+                  backgroundColor: '#FFEBEE', 
+                  color: '#C62828', 
+                  border: '1px solid #FFCDD2', 
+                  marginBottom: '20px',
+                  width: '100%',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Trash2 size={16} /> Delete Broker Profile
+              </button>
+            )}
+
             {/* WhatsApp Share Box */}
             <div className="whatsapp-box" onClick={() => shareOnWhatsApp(activeBrokerLedger)}>
               <Share2 size={18} /> Send ledger summary on WhatsApp
@@ -1879,15 +2473,15 @@ export default function App() {
               const note = expenseNote.trim();
 
               if (!title) {
-                alert("Please enter details/title!");
+                showAlert("Please enter details/title!");
                 return;
               }
               if (isNaN(amt) || amt <= 0) {
-                alert("Please enter a valid amount!");
+                showAlert("Please enter a valid amount!");
                 return;
               }
               if (cat === 'Crop Investment' && !vegId) {
-                alert("Please select a crop!");
+                showAlert("Please select a crop!");
                 return;
               }
 
@@ -1897,7 +2491,7 @@ export default function App() {
                 await addExpense(cat, vegId, title, amt, dateISO, note);
                 setShowAddExpense(false);
               } catch (err) {
-                alert(err.message);
+                showAlert(err.message);
               } finally {
                 setIsSavingExpense(false);
               }
@@ -1987,6 +2581,405 @@ export default function App() {
                 {isSavingExpense ? 'Saving...' : 'Save Expense'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- EDIT SALE MODAL --- */}
+      {editingSale && (
+        <div className="modal-overlay" onClick={() => setEditingSale(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Edit Vegetable Sale</span>
+              <button className="close-btn" onClick={() => setEditingSale(null)}><X /></button>
+            </div>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const bId = editSaleBrokerId;
+              const veg = editSaleVeg;
+              const dateVal = editSaleDate;
+
+              if (!bId) {
+                showAlert("Please select a broker!");
+                return;
+              }
+
+              if (!veg) {
+                showAlert("Please select a vegetable crop!");
+                return;
+              }
+
+              const hasQty = editSaleQty && !isNaN(Number(editSaleQty)) && Number(editSaleQty) > 0;
+              if (!editSaleIsOverall && !hasQty) {
+                showAlert("Please enter a valid quantity sold!");
+                return;
+              }
+
+              const qty = hasQty ? Number(editSaleQty) : 1;
+              const unit = editSaleUnit || 'Lump Sum';
+
+              let price;
+              if (editSaleIsOverall) {
+                const amt = Number(editSaleOverallAmt);
+                if (isNaN(amt) || amt <= 0) {
+                  showAlert("Please enter a valid overall amount!");
+                  return;
+                }
+                price = Math.round((amt / qty) * 100) / 100;
+              } else {
+                const prc = Number(editSalePrice);
+                if (isNaN(prc) || prc <= 0) {
+                  showAlert("Please enter a valid unit price!");
+                  return;
+                }
+                price = prc;
+              }
+
+              setIsSavingEditSale(true);
+              try {
+                const dateISO = dateVal ? new Date(dateVal).toISOString() : new Date().toISOString();
+                await editSale(editingSale._id, {
+                  brokerId: bId,
+                  vegetableName: veg,
+                  quantity: qty,
+                  unit,
+                  unitPrice: price,
+                  date: dateISO,
+                  isOverallSale: editSaleIsOverall
+                });
+                setEditingSale(null);
+              } catch (err) {
+                showAlert(err.message);
+              } finally {
+                setIsSavingEditSale(false);
+              }
+            }}>
+              <div className="form-group">
+                <label>Select Broker (आढ़तिया चुनें)*</label>
+                <select 
+                  className="input-field" 
+                  value={editSaleBrokerId} 
+                  onChange={e => setEditSaleBrokerId(e.target.value)} 
+                  required
+                >
+                  {brokers.map(b => <option key={b._id} value={b._id}>{b.name} ({b.mandiName})</option>)}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Vegetable Name (सब्जी चुनें)*</label>
+                <select 
+                  className="input-field" 
+                  value={editSaleVeg} 
+                  onChange={e => setEditSaleVeg(e.target.value)}
+                  required
+                >
+                  {vegetables.map(v => <option key={v._id} value={v.name}>{v.name}</option>)}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Quantity Sold (बेची गई मात्रा){editSaleIsOverall ? ' (Optional)' : '*'}</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  value={editSaleQty} 
+                  inputMode="decimal"
+                  onChange={handleNumericChange(setEditSaleQty)} 
+                  required={!editSaleIsOverall} 
+                />
+              </div>
+              
+              <div className="form-group">
+                <label>Selling Unit (इकाई){editSaleIsOverall ? ' (Optional)' : '*'}</label>
+                <select 
+                  value={editSaleUnit} 
+                  onChange={e => setEditSaleUnit(e.target.value)} 
+                  className="input-field"
+                >
+                  {editSaleIsOverall && <option value="">-- None / Lump Sum --</option>}
+                  <option value="Kg">Kg (किलो)</option>
+                  <option value="Crates">Crates (क्रेट)</option>
+                  <option value="Bags">Bags (बोरी)</option>
+                  <option value="Pouch">Pouch (थैली)</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                <input 
+                  type="checkbox" 
+                  id="editSaleIsOverall" 
+                  checked={editSaleIsOverall} 
+                  onChange={e => {
+                    setEditSaleIsOverall(e.target.checked);
+                    if (e.target.checked) {
+                      setEditSalePrice('');
+                    } else {
+                      setEditSaleOverallAmt('');
+                    }
+                  }} 
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                <label htmlFor="editSaleIsOverall" style={{ margin: 0, fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem', color: 'var(--primary-color)' }}>
+                  Overall Sale (एकमुश्त / थोक बिल)
+                </label>
+              </div>
+
+              {editSaleIsOverall ? (
+                <div className="form-group">
+                  <label>Overall Bill Amount (कुल बिल राशि ₹)*</label>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    placeholder="e.g. 5000"
+                    value={editSaleOverallAmt} 
+                    inputMode="decimal"
+                    onChange={handleNumericChange(setEditSaleOverallAmt)} 
+                    required 
+                  />
+                </div>
+              ) : (
+                <div className="form-group">
+                  <label>Unit Price (दर प्रति इकाई ₹)*</label>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    placeholder="e.g. 20"
+                    value={editSalePrice} 
+                    inputMode="decimal"
+                    onChange={handleNumericChange(setEditSalePrice)} 
+                    required 
+                  />
+                </div>
+              )}
+
+              {/* Live Gross Value visual */}
+              {((!editSaleIsOverall && editSaleQty > 0 && editSalePrice > 0) || (editSaleIsOverall && Number(editSaleOverallAmt) > 0)) && (
+                <div className="item-card" style={{ marginBottom: '16px', border: '1px dashed var(--primary-color)' }}>
+                  <div className="ledger-stat" style={{ borderTop: 'none', marginTop: 0, paddingTop: 0 }}>
+                    <strong>Total Sales Value:</strong>
+                    <strong style={{ color: 'var(--primary-color)' }}>
+                      ₹{Number(editSaleIsOverall ? editSaleOverallAmt : (Number(editSaleQty) * Number(editSalePrice))).toLocaleString('en-IN')}
+                    </strong>
+                  </div>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>Sale Date (तारीख और समय)</label>
+                <input 
+                  type="datetime-local" 
+                  value={editSaleDate} 
+                  onChange={e => setEditSaleDate(e.target.value)} 
+                  className="input-field" 
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary" disabled={isSavingEditSale}>
+                {isSavingEditSale ? 'Saving Changes...' : 'Save Changes'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- EDIT EXPENSE MODAL --- */}
+      {editingExpense && (
+        <div className="modal-overlay" onClick={() => setEditingExpense(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Edit Expense / Investment</span>
+              <button className="close-btn" onClick={() => setEditingExpense(null)}><X /></button>
+            </div>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const cat = editExpenseCategory;
+              const vegId = cat === 'Crop Investment' ? (editExpenseVegId || (vegetables[0]?._id || '')) : editExpenseVegId;
+              const title = editExpenseTitle.trim();
+              const amt = Number(editExpenseAmount);
+              const dateVal = e.target.date.value;
+              const note = editExpenseNote.trim();
+
+              if (!title) {
+                showAlert("Please enter details/title!");
+                return;
+              }
+              if (isNaN(amt) || amt <= 0) {
+                showAlert("Please enter a valid amount!");
+                return;
+              }
+              if (cat === 'Crop Investment' && !vegId) {
+                showAlert("Please select a crop!");
+                return;
+              }
+
+              setIsSavingEditExpense(true);
+              try {
+                const dateISO = dateVal ? new Date(dateVal).toISOString() : new Date().toISOString();
+                await editExpense(editingExpense._id, {
+                  category: cat,
+                  vegetableId: vegId || null,
+                  title,
+                  amount: amt,
+                  date: dateISO,
+                  note
+                });
+                setEditingExpense(null);
+              } catch (err) {
+                showAlert(err.message);
+              } finally {
+                setIsSavingEditExpense(false);
+              }
+            }}>
+              <div className="form-group">
+                <label>Expense Category (प्रकार)*</label>
+                <select 
+                  className="input-field" 
+                  value={editExpenseCategory} 
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditExpenseCategory(val);
+                    if (val === 'Crop Investment') {
+                      setEditExpenseVegId(vegetables[0]?._id || '');
+                    } else {
+                      setEditExpenseVegId('');
+                    }
+                  }}
+                  required
+                >
+                  <option value="Crop Investment">Crop Investment (फसल की लागत)</option>
+                  <option value="Personal Expense">Personal Expense (व्यक्तिगत खर्चा)</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Select Crop (फसल चुनें){editExpenseCategory === 'Crop Investment' ? '*' : ' (Optional)'}</label>
+                <select 
+                  className="input-field" 
+                  value={editExpenseVegId} 
+                  onChange={e => setEditExpenseVegId(e.target.value)}
+                  required={editExpenseCategory === 'Crop Investment'}
+                >
+                  {editExpenseCategory === 'Personal Expense' && (
+                    <option value="">-- None / No Crop --</option>
+                  )}
+                  {vegetables.map(v => <option key={v._id} value={v._id}>{v.name}</option>)}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Expense Title / Details (विवरण)*</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  value={editExpenseTitle}
+                  onChange={e => setEditExpenseTitle(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Amount Spent (खर्च राशि ₹)*</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  value={editExpenseAmount} 
+                  inputMode="decimal"
+                  onChange={handleNumericChange(setEditExpenseAmount)} 
+                  required 
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Expense Date & Time (तारीख और समय)</label>
+                <input 
+                  type="datetime-local" 
+                  name="date" 
+                  className="input-field" 
+                  defaultValue={editingExpense ? getLocalDateTimeString(editingExpense.date) : getLocalDateTimeString()} 
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Notes / Remarks (टिप्पणी)</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  value={editExpenseNote}
+                  onChange={e => setEditExpenseNote(e.target.value)}
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary" disabled={isSavingEditExpense}>
+                {isSavingEditExpense ? 'Saving Changes...' : 'Save Changes'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- CUSTOM CONFIRMATION DIALOG MODAL --- */}
+      {confirmDialog && (
+        <div className="modal-overlay" style={{ zIndex: 2000 }} onClick={() => setConfirmDialog(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px', color: '#E53935' }}>
+              <AlertTriangle size={48} />
+            </div>
+            <h3 style={{ fontSize: '1.2rem', marginBottom: '12px', color: 'var(--text-main)' }}>Confirm Action</h3>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '24px', lineHeight: '1.5' }}>
+              {confirmDialog.message}
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={() => {
+                  if (confirmDialog.onCancel) confirmDialog.onCancel();
+                  setConfirmDialog(null);
+                }}
+                style={{ width: 'auto', padding: '8px 20px' }}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={() => {
+                  confirmDialog.onConfirm();
+                  setConfirmDialog(null);
+                }}
+                style={{ width: 'auto', padding: '8px 20px', backgroundColor: confirmDialog.isDanger ? '#E53935' : 'var(--primary-color)' }}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- CUSTOM ALERT DIALOG MODAL --- */}
+      {alertDialog && (
+        <div className="modal-overlay" style={{ zIndex: 3000 }} onClick={() => setAlertDialog(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px', color: '#E53935' }}>
+              <AlertTriangle size={48} />
+            </div>
+            <h3 style={{ fontSize: '1.2rem', marginBottom: '12px', color: 'var(--text-main)' }}>Alert</h3>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '24px', lineHeight: '1.5' }}>
+              {alertDialog.message}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={() => setAlertDialog(null)}
+                style={{ width: 'auto', padding: '8px 30px' }}
+              >
+                OK
+              </button>
+            </div>
           </div>
         </div>
       )}
